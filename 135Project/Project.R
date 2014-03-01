@@ -1,6 +1,4 @@
 # http://www.kaggle.com/c/benchmark-bond-trade-price-challenge/data
-# data = read.csv('train2.csv')
-# save(data, file = 'train.rda')
 setwd('~/Dropbox/STA135/Project')
 load('train.rda')
 library(MASS)
