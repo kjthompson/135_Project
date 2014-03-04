@@ -3,6 +3,11 @@ setwd('~/Dropbox/STA135/Project')
 load('train.rda')
 library(MASS)
 
+## IDEAS FOR PROJECT
+# classification trees if response is categorical
+# regression trees if response is numerical
+
+
 # basic information
 nrow(data)
 length(unique(data$bond_id))
