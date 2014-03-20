@@ -1,15 +1,102 @@
 setwd('~/Dropbox/STA135/Project')
 load('train.rda')
 load('test.rda')
+load('uniqueRows.rda')
+load('priceTimeDiff.rda')
 library(MASS)
 library(lattice)
+library(rpart)
+library(rpart.plot)
+library(tree)
+library(randomForest)
+library(doSNOW)
+library(foreach)
+library(randomForest)
+
+ibrary(plyr)
 
 ## IDEAS FOR PROJECT
 # classification trees if response is categorical
 # regression trees if response is numerical
+# LaTeX or Lyx for making things look pretty
+
+# difference between trade times
+
+# maybe analyze type 4 seperately than type 2 and 3
 
 ## Using trade price and/or curve based price to classify increase in
 ## trade price and/or curve based price
+
+# for test data, use 10-fold cv
+
+##############
+## EXPLORATION
+##############
+
+trade.price = train[grep('trade_price_*', names(train))]
+based.price = train[grep('*based_price*', names(train))]
+
+# STEP 0: create train and test data
+ 
+# set seed and find indices for first section and second section of data
+set.seed(2718)
+n = nrow(uniqueRows)
+n.test = floor(n / 10)
+n.train = n - n.test
+
+# randomize which indices are used
+train.index = sample(x = n, size = n.train)
+
+# split data into train and test data
+data.train = uniqueRows[train.index, ]
+data.test = uniqueRows[-train.index, ]
+
+
+# how to treat previous trade prices which have value NA?
+# for this I removed any observations where >= 1 values were NA
+
+trade.price.complete = data.train[complete.cases(data.train), ]
+
+
+trade.price.id1 = trade.price[1:27,]
+trade.price.id1 = trade.price[1:28,]
+table(trade.price.id1[27,] %in% trade.price.id1[28,])
+table(trade.price.id1[18,] %in% trade.price.id1[28,])
+table(trade.price.id1[17,] %in% trade.price.id1[28,])
+train$time_to_maturity[1]
+train$time_to_maturity[27]
+
+rawr = split(train, train$bond_id)
+data.unique.rows = lapply(rawr, function(x) x[rev(seq(nrow(x), 1, -11)),])
+uniqueRows = rbind.fill(data.unique.rows)
+save(uniqueRows, file = 'uniqueRows.rda')
+
+price.diff = uniqueRows[, grep('^trade_price', names(uniqueRows))]
+price.diff = as.numeric(diff(t(price.diff)))
+
+time.diff0 = uniqueRows[, grep('^received_time', names(uniqueRows))]
+time.diff1 = diff(t(time.diff0))
+time.diff2 = rbind(t(time.diff0)[1,], time.diff1)
+time.diff3 = as.numeric(time.diff2)
+
+priceTimeDiff = cbind(price.diff, time.diff3)
+save(priceTimeDiff, file = 'priceTimeDiff.rda')
+
+fairDiff = with(uniqueRows, trade_price - curve_based_price)
+
+
+
+# subset.bestset = 
+
+foo = sapply()
+
+# seq(nrow, 1, -11)
+
+# write.table(trade.price, "tradePrice.txt", sep = " ", col.names = FALSE, row.names = FALSE)
+# 22994 rows contain overlap out of 762678
+# done the other way, 758943 out of 762678
+# nrow(train) - length(unique(train$bond)) = 758942
+
 
 ############
 ## FUNCTIONS
@@ -27,29 +114,6 @@ outlier.finder = function(index, data) {
 ##########################
 #### DISCRIMINATE ANALYSIS
 ##########################
-
-trade.price = train[grep('trade_price_*', names(train))]
-based.price = train[grep('*based_price*', names(train))]
-
-# STEP 0: create train and test data
- 
-# set seed and find indices for first have and second half of data
-set.seed(1234)
-n = nrow(train)
-n.train = floor(n / 2)
-n.test = n - n.train
-
-# randomize which indices are used
-train.index = sample(x = n, size = n.train)
-
-# split data into train and test data
-data.train = trade.price[train.index, ]
-data.test = trade.price[-train.index, ]
-# how to treat previous trade prices which have value NA?
-# for this I removed any observations where >= 1 values were NA
-
-trade.price.complete = data.train[complete.cases(data.train), ]
-
 # STEP 1: Is the Data Normal?
 # Answer: No, data has many extreme high and low values
 # could break up into quantiles
@@ -133,29 +197,108 @@ outlier.list.test = sapply(row.numbers.test, outlier.finder, trade.price.test)
 outlier.index.test = index.all.test %in% unique(unlist(outlier.list.test))
 no.outliers.test = trade.price.test[!outlier.index.test, ]
 
+##################
+## REGRESSION TREE 
+##################
 
-## STEP 3: Try QDA anyway
+data.time = train[grep('received_time*', names(train))]
+time_avg = rowMeans(train[grep('received_time*', names(train))])
 
-# can't use with our test data because we don't have the current price,
-# meaning we can't check the accuracy of our analysis
-# remove current price from train since it is not in test
-
-# create groupings for train and test data
-rose.train = with(no.outliers, ifelse(trade_price < trade_price_last1, 0, 1))
-rose.test = with(no.outliers.test, ifelse(trade_price < trade_price_last1, 0, 1))
+train.time = cbind(train, time_avg)
 
 
-# remove current price from training and test data
-no.outliers.train = no.outliers[-1]
-no.outliers.test = no.outliers.test[-1]
 
-qda = qda(x = no.outliers.train, grouping = rose.train)
 
-pred = predict(qda, newdata = no.outliers.test)
-# results are dissapointing
-confusion.table = table(pred$class, rose.test)
-# error rate of 0.33 percent. could be worse?
-error.rate = (confusion.table[[2]] + confusion.table[[3]] ) / sum(confusion.table)
+fit.tree = tree(trade_price ~ ., data = data.train)
+fit.pred = predict(fit.tree, data.test)
+
+# correct on average, but lots of variance
+plot(fit.pred, data.test$trade_price)
+abline(0, 1)
+sqrt(mean((fit.pred - data.test$trade_price) ^ 2))
+
+# make variable names a-z and have key mapping temp variables to actual vars
+summary(fit.tree)
+plot(fit.tree)
+text(fit.tree, pretty = 0)
+
+
+##########
+## BAGGING
+##########
+
+#http://www.milbo.org/rpart-plot/prp.pdf 
+
+# don't include current variables (e.g. current size, current delay)
+train.complete = data.train[complete.cases(data.train), ]
+bad.indices = names(train.complete) %in% c('curve_based_price', 
+                                           'received_time_diff_last1', 'trade_size',
+                                           'trade_type')
+train.complete = train.complete[ , !bad.indices]
+test.complete = data.test[complete.cases(data.test), ]
+test.complete = test.complete[ , !bad.indices]
+
+registerDoSNOW(makeCluster(4, type = 'SOCK'))
+
+rf = foreach(ntree = rep(7, 4), .combine = combine, 
+             .packages = 'randomForest') %dopar%
+             randomForest(train.complete[, -3], train.complete[[3]], 
+                          ntree = ntree)
+
+fairDiff.complete = with(train.complete, trade_price - curve_based_price) 
+
+rf.fair = foreach(ntree = rep(7, 4), .combine = combine, 
+             .packages = 'randomForest') %dopar%
+             randomForest(train.complete[, -3], fairDiff.complete, 
+                          ntree = ntree)
+
+yhat.fair = predict(rf.fair, newdata = test.complete)
+plot(yhat.fair, with(test.complete, trade_price - curve_based_price) )
+abline(0, 1)
+
+x11()
+yhat.bag = predict(rf, newdata = test.complete)
+plot(yhat.bag, test.complete[[3]])
+abline(0, 1)
+
+importance(rf.fair)
+varImpPlot(rf.fair)
+# m = p, aka Bagging
+## USES WRONG DATA SET
+bag.price = randomForest(trade_price ~ ., data = train.complete, 
+                          mtry = ncol(train.complete) - 1, importance = TRUE)
+
+
+time.data = train[ grep('(received_time*)|(^trade_price$)', names(train))]
+
+time.stand = apply(time.data, 1, function(x) (x - mean(x)) / sd(x))
+
+
+## CHECK PREDCITION USING REG TREE VS RF
+# it is in fact the case that reg tree only predictions discrete categories
+# whereas rf appears to predict individually
+set.seed(1)
+train = sample(1: nrow ( Boston ) , nrow ( Boston ) /2)
+tree.boston = tree(medv ~ . , Boston , subset = train )
+
+summary ( tree.boston )
+
+yhat = predict ( tree.boston , newdata = Boston [ -train ,])
+boston.test = Boston [ -train ,"medv"]
+plot ( yhat , boston.test )
+abline (0 ,1)
+mean (( yhat - boston.test ) ^2)
+
+set.seed(1)
+rf.boston=randomForest(medv~.,data=Boston,subset=train,
+mtry=6,importance=TRUE)
+yhat.rf=predict(rf.boston,newdata=Boston[-train,])
+plot(yhat.rf, boston.test)
+abline(0,1)
+mean((yhat.rf-boston.test)^2)
+
+
+
 
 
 #################
@@ -210,55 +353,5 @@ split()
 sapply(foo, nrow)
 unique()
 # 3. 
-
-
-## Classification Ch. 11 or 12
-# need to be able to split data into 2 or 3 categories
-# need training and test data
-# finding new categories for variables
-  # use classification to break data into groups that you dont already
-  # know should be groups (ie not a variable you already have)
-# Possible Categories:
-  # will the bond go up in price?
-  # will the bond turn over quickly?
-# from: https://www.stat.berkeley.edu/classes/s133/Class2a.html
-data1 = data
-rose = data$trade_price > data$trade_price_last1
-rose10 = data$trade_price > data$trade_price_last10
-data1 = cbind(data1, rose)
-data1[is.na(data1)] = 0
-
-foo = lda(rose ~ ., data = data1)
-bar = predict(foo)
-table(data1$is_callable, bar$class)
-
-vlda = function(v, formula, data, cl) {
-   require(MASS)
-   grps = cut(1:nrow(data1), v, labels = FALSE)[sample(1:nrow(data1))]
-   pred = lapply(1:v, function(i, formula, data1) {
-	    omit = which(grps == i)
-	    z = lda(formula, data = data[-omit, ])
-            predict(z, data[omit, ])
-	    }, formula, data)
-
-   wh = unlist(lapply(pred,function(pp)pp$class))
-   table(wh, cl[order(grps)])
-}
-
-tt = vlda(5, rose ~ ., data1, data1$rose)
-# Error Rate of LDA
-# tt = matrix(c(442570, 137614, 6580, 175914), nrow = 2, byrow = TRUE)
-error.rate = sum(tt[row(tt) != col(tt)]) / sum(tt)
-
-# Linear combos of original variables used for LDA
-foo$scaling
-
-# could use PCA and then classification
-  # compare classifcation with and without PCA and see if there is a
-  # difference
-  # can do with covariates and std covariates and compare
-
-
-## Clustering
 
 
